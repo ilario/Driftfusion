@@ -12,10 +12,10 @@
 symstructs_SR = genIntStructs(ssol_i_eq_SR, ssol_i_light_SR, 100, 1e-7, 4);
 
 % prepare tests for boundary conditions
-p = ssol_i_eq_SR.params;
+p = ssol_i_eq_SR.p;
 p.BC = 2;
 ssol_i_eq_SR_BC2 = pindrift(ssol_i_eq_SR, p);
-p = ssol_i_light_SR.params;
+p = ssol_i_light_SR.p;
 p.BC = 2;
 ssol_i_light_SR_BC2 = pindrift(ssol_i_light_SR, p);
 symstructs_SR_BC2 = genIntStructs(ssol_i_eq_SR_BC2, ssol_i_light_SR_BC2, 100, 1e-7, 4);
