@@ -1,5 +1,5 @@
 % test pindrift and related functions
-% USAGE: runtests('unit_test')
+% USAGE: runtests('core_unit_test')
 
 % prepare solutions and indirectly test equilibrate and genIntStructs
 % functions
