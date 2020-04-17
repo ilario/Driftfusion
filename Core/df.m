@@ -43,6 +43,7 @@ elseif length(varargin) == 2
         par = varargin{2};
     end
 end
+save_varargin = varargin;
 
 %% Unpack properties
 % Dependent properties: Prevents recalculation of dependent properties by pdepe defined in Methods
@@ -158,10 +159,13 @@ int1gx1 = int1*gx1;
 int2gx2 = int2*gx2;
 
 % S_potential prefactor
-q_over_eppmax_epp0 = q/(eppmax*epp0);
+q_over_eppmax_epp0 = char(num2str(q/(eppmax*epp0), 10));
 
 % pre-calculation S_potential static charge
 NANDNaniNcat = -NA+ND+Nani-Ncat;
+NANDNcat = -NA+ND-Ncat;
+NAND = -NA+ND;
+
 
 % pre-calculate kB*T
 kBT = kB*T;
@@ -180,11 +184,16 @@ g2_fun_type_constant = g2_fun_type == "constant";
 % C: Time-dependence prefactor term
 switch N_ionic_species
     case 1
-        C_potential = 0;
-        C_electron = 1;
-        C_hole = 1;
-        C_cation = 1;
-        Cpre = [C_potential; C_electron; C_hole; C_cation];
+%        C_potential = 0;
+%        C_electron = 1;
+%        C_hole = 1;
+%        C_cation = 1;
+%        Cpre = [C_potential; C_electron; C_hole; C_cation];
+         C_potential = '0';
+         C_electron = '1';
+         C_hole = '1';
+         C_cation = '1';
+         Cpre = ['[' C_potential ';' C_electron ';' C_hole ';' C_cation ']'];
         N_ionic_species_two = false;
     case 2
         C_potential = 0;
@@ -195,118 +204,152 @@ switch N_ionic_species
         Cpre = [C_potential; C_electron; C_hole; C_cation; C_anion];
         N_ionic_species_two = true;
     otherwise
-        C_potential = 0;
-        C_electron = 1;
-        C_hole = 1;
-        Cpre = [C_potential; C_electron; C_hole];
+%        C_potential = 0;
+%        C_electron = 1;
+%        C_hole = 1;
+%        Cpre = [C_potential; C_electron; C_hole];
+         C_potential = '0';
+         C_electron = '1';
+         C_hole = '1';
+         Cpre = ['[' C_potential ';' C_electron ';' C_hole ']'];
         N_ionic_species_two = false;
 end
 
-%% Call solver
+
+%% Equation editor
+
+% F_potential: Flux term for potential
+%F_potential = 'Fmat_i(1)*dudx(1)';
+F_potential = 'Fmat(1,i)*dudx(1)';
+
+if mobset
+    % F_electron: Flux term for electrons
+    % dudx(2) is dndx, gradient of electrons concentration
+   % F_electron = 'Fmat_i(2)*u(2)*(-dudx(1) + Fmat_i(4)) + Fmat_i(8)*(dudx(2) - u(2)*Fmat_i(10))';
+    F_electron = 'Fmat(2,i)*u(2)*(-dudx(1) + Fmat(4,i)) + Fmat(8,i)*(dudx(2) - u(2)*Fmat(10,i))';
+% F_hole: Flux term for holes
+% dudx(3) is dpdx, gradient of holes concentration
+    %F_hole = 'Fmat_i(3)*u(3)*(dudx(1) - Fmat_i(5)) + Fmat_i(9)*(dudx(3) - u(3)*Fmat_i(11))';
+        F_hole = 'Fmat(3,i)*u(3)*(dudx(1) - Fmat(5,i)) + Fmat(9,i)*(dudx(3) - u(3)*Fmat(11,i))';
+else
+    F_electron = '0';
+    F_hole = '0';
+end
+
+if mobseti
+    % F_cation: Flux term for cations
+    % dudx(4) is dcdx, gradient of mobile cation concentration
+  %  F_cation = strcat(num2str(K_cation), '*Fmat_i(6)*(u(4)*dudx(1) + ', num2str(kB*T), '*dudx(4)*(1 + u(4)/(Fmat_i(12)-u(4))))');
+    F_cation = strcat(num2str(K_cation), '*Fmat(6,i)*(u(4)*dudx(1) + ', num2str(kB*T), '*dudx(4)*(1 + u(4)/(Fmat(12,i)-u(4))))');
+
+    % F_anion: Flux term for anions
+    % dudx(5) is dadx, gradient of mobile anion concentration
+   % F_anion = strcat(num2str(K_anion), '*Fmat_i(7)*(u(5)*-dudx(1) + ', num2str(kB*T), '*dudx(5)*(1 + u(5)/(Fmat_i(13)-u(5))))');
+    F_anion = strcat(num2str(K_anion), '*Fmat(7,i)*(u(5)*-dudx(1) + ', num2str(kB*T), '*dudx(5)*(1 + u(5)/(Fmat(13,i)-u(5))))');
+else
+    F_cation = '0';
+    F_anion = '0';
+end
+
+% Source terms
+
+% g: Generation terms
+if g1_fun_type_constant
+  %  gxt1 = 'Smat_i(1)';
+    gxt1 = 'Smat(1,i)';
+else
+   % gxt1 = 'g1_fun(g1_fun_arg, t)*Smat_i(2)';
+    gxt1 = 'g1_fun(g1_fun_arg, t)*Smat(2,i)';
+end
+
+if g2_fun_type_constant
+    %gxt2 = 'Smat_i(3)';
+    gxt2 = 'Smat(3,i)';
+else
+    %gxt2 = 'g2_fun(g2_fun_arg, t)*Smat_i(4)';
+        gxt2 = 'g2_fun(g2_fun_arg, t)*Smat(4,i)';
+end
+
+if radset
+  %  S_electron_hole_rad = 'Smat_i(5)*(u(2)*u(3)-Smat_i(6))';
+        S_electron_hole_rad = 'Smat(5,i)*(u(2)*u(3)-Smat(6,i))';
+else
+    S_electron_hole_rad = '0';
+end
+
+if SRHset
+    %S_electron_hole_SRH = '(u(2)*u(3)-Smat_i(6))/(Smat_i(7)*(u(3)+Smat_i(8)) + Smat_i(9)*(u(2)+Smat_i(10)))';
+    S_electron_hole_SRH = '(u(2)*u(3)-Smat(6,i))/(Smat(7,i)*(u(3)+Smat(8,i)) + Smat(9,i)*(u(2)+Smat(10,i)))';
+else
+    S_electron_hole_SRH = '0';
+end
+% S_electron_hole: Source term for electrons and for holes
+S_electron_hole = [gxt1 ' + ' gxt2 ' - ' S_electron_hole_rad ' - ' S_electron_hole_SRH];
+
+if N_ionic_species % Condition for cation and anion terms
+    if N_ionic_species_two % Condition for anion terms
+        % S: Source terms
+        
+        %S_potential = [q_over_eppmax_epp0 '*(-u(2)+u(3)-u(5)+u(4)-Smat_i(11)+Smat_i(12)-Smat_i(13)+Smat_i(14)'];
+        %  FS_fun = str2func(['@(t,u,dudx,i,Fmat_i,g1_fun,g1_fun_arg,g2_fun,g2_fun_arg,Smat_i) deal([' F_potential ';' F_electron ';' F_hole ';' F_cation ';' F_anion '], [' S_potential ';' S_electron_hole ';' S_electron_hole '; 0; 0])']);
+        
+        S_potential = [q_over_eppmax_epp0 '*(-u(2)+u(3)-u(5)+u(4)-Smat(11,i)+Smat(12,i)-Smat(13,i)+Smat(14,i)'];
+F_fun_str = ['[' F_potential ';' F_electron ';' F_hole ';' F_cation ';' F_anion ']'];
+S_fun_str = ['[' S_potential ';' S_electron_hole ';' S_electron_hole '; 0; 0]'];
+    else
+        % S: Source terms
+%        S_potential = [q_over_eppmax_epp0 '*(-u(2)+u(3)+u(4)-Smat_i(11)+Smat_i(12)-Smat_i(13))'];
+% FS_fun = str2func(['@(t,u,dudx,i,Fmat_i,g1_fun,g1_fun_arg,g2_fun,g2_fun_arg,Smat_i) deal([' F_potential ';' F_electron ';' F_hole ';' F_cation '], [' S_potential ';' S_electron_hole ';' S_electron_hole '; 0])']);
+
+S_potential = [q_over_eppmax_epp0 '*(-u(2)+u(3)+u(4)-Smat(11,i)+Smat(12,i)-Smat(13,i))'];
+F_fun_str = ['[' F_potential ';' F_electron ';' F_hole ';' F_cation ']'];
+S_fun_str = ['[' S_potential ';' S_electron_hole ';' S_electron_hole '; 0]'];
+     
+    end
+else
+    % S: Source terms
+   % S_potential = [q_over_eppmax_epp0 '*(-u(2)+u(3)-Smat_i(11)+Smat_i(12))'];
+   % FS_fun = str2func(['@(t,u,dudx,i,Fmat_i,g1_fun,g1_fun_arg,g2_fun,g2_fun_arg,Smat_i) deal([' F_potential ';' F_electron ';' F_hole '], [' S_potential ';' S_electron_hole ';' S_electron_hole '])']);
+
+   S_potential = [q_over_eppmax_epp0 '*(-u(2)+u(3)-Smat(11,i)+Smat(12,i))'];
+F_fun_str = ['[' F_potential ';' F_electron ';' F_hole ']'];
+S_fun_str = ['[' S_potential ';' S_electron_hole ';' S_electron_hole ']'];
+end
+Fmat = vertcat(epp_norm, mue, muh, gradEA,...
+       gradIP, mucat, muani, Dn, Dp, gradNc_over_Nc,...
+       gradNv_over_Nv, DOScat, DOSani);
+Smat = vertcat(int1gx1,gx1,int2gx2,gx2,B,ni_squared,taun,pt,taup,nt,NA,ND,Ncat,Nani);
+
+
+    dfpde = str2func(['@(x,t,u,dudx,i,Fmat,Smat,g1_fun,g1_fun_arg,g2_fun,g2_fun_arg) deal(' Cpre ',' F_fun_str ',' S_fun_str ')']);
+
+   %% Call solver
 % inputs with '@' are function handles to the subfunctions
 % below for the: equation, initial conditions, boundary conditions
-u = pdepe(par.m,@dfpde,@dfic,@dfbc,x,t,options);
+u = pdepe(par.m,dfpde,@dfic,@dfbc,x,t,options,Fmat,Smat,g1_fun,g1_fun_arg,g2_fun,g2_fun_arg);
 
 %% Subfunctions
 % Set up partial differential equation (pdepe) (see MATLAB pdepe help for details of C,F,S)
 % C = Time-dependence prefactor
 % F = Flux terms
 % S = Source terms
-function [C,F,S] = dfpde(x,t,u,dudx)   
-    
-    % C: Time-dependence prefactor term
-    C = Cpre;
-
-    % Get position point
-    sampled_i = find(x_ihalf_sampled <= x);
-    sampled_i = sampled_i(end);
-    i = (sampled_i-1)*sampling_step + find(x == x_ihalf_padded_mat(:,sampled_i));
-
-    % g: Generation terms
-    if g1_fun_type_constant
-        gxt1 = int1gx1(i);
-    else
-        gxt1 = g1_fun(g1_fun_arg, t)*gx1(i);
-    end
-
-    if g2_fun_type_constant
-        gxt2 = int2gx2(i);
-    else
-        gxt2 = g2_fun(g2_fun_arg, t)*gx2(i);
-    end
-
-    % Variables
-    n = u(2); p = u(3);
-    % gradient of electrostatic potential, electric field
-    dVdx = dudx(1);
-
-    if N_ionic_species
-            c = u(4);           % Include cation variable
-            a = Nani(i);
-        if N_ionic_species_two
-            c = u(4);           % Include cation variable
-            a = u(5);           % Include anion variable
-        end
-    else
-        c = Ncat(i);
-        a = Nani(i);
-    end
-
-    %% Equation editor
-
-    % F_potential: Flux term for potential
-    F_potential = epp_norm(i)*dVdx;
-
-    % F_electron: Flux term for electrons
-    % dudx(2) is dndx, gradient of electrons concentration
-    F_electron = mobset*(mue(i)*n*(-dVdx + gradEA(i)) + Dn(i)*(dudx(2) - n*gradNc_over_Nc(i)));
-
-    % F_hole: Flux term for holes
-    % dudx(3) is dpdx, gradient of holes concentration
-    F_hole = mobset*(muh(i)*p*(dVdx - gradIP(i)) + Dp(i)*(dudx(3) - p*gradNv_over_Nv(i)));
-
-        % Source terms
-        S_potential = q_over_eppmax_epp0*(-n+p-a+c+NANDNaniNcat(i));
-    % S_electron_hole: Source term for electrons and for holes
-    S_electron_hole = gxt1 + gxt2 - radset*B(i)*(n*p-ni_squared(i)) - SRHset*(n*p-ni_squared(i))/(taun(i)*(p+pt(i)) + taup(i)*(n+nt(i)));
-
-    if N_ionic_species % Condition for cation and anion terms
-
-        % F_cation: Flux term for cations
-        % dudx(4) is dcdx, gradient of mobile cation concentration
-        F_cation = K_cation*mobseti*mucat(i)*(c*dVdx + kBT*dudx(4)*(1 + c/(DOScat(i)-c)));
-
-        if N_ionic_species_two % Condition for anion terms
-
-            % F_anion: Flux term for anions
-            % dudx(5) is dadx, gradient of mobile anion concentration
-            F_anion = K_anion*mobseti*muani(i)*(a*-dVdx + kBT*dudx(5)*(1 + a/(DOSani(i)-a)));
-
-            % F: Flux terms
-            F = [F_potential; F_electron; F_hole; F_cation; F_anion];
-            
-            % S: Source terms
-            S = [S_potential; S_electron_hole; S_electron_hole; 0; 0];
-        else
-            % F: Flux terms
-            F = [F_potential; F_electron; F_hole; F_cation];
-
-            % S: Source terms
-            S = [S_potential; S_electron_hole; S_electron_hole; 0];
-        end
-    else
-        % F: Flux terms
-        F = [F_potential; F_electron; F_hole];
-
-        % S: Source terms
-        S = [S_potential;S_electron_hole;S_electron_hole];
-    end
-end
+% function [C,F,S] = dfpde(x,t,u,dudx,i)
+%     %disp(ii)
+%     % C: Time-dependence prefactor term
+%     C = Cpre;
+% 
+%     % Get position point
+%  %   sampled_i = find(x_ihalf_sampled <= x);
+%  %   sampled_i = sampled_i(end);
+%  %   i = (sampled_i-1)*sampling_step + find(x == x_ihalf_padded_mat(:,sampled_i));
+% 
+%         [F, S] = FS_fun(t,u,dudx,i,Fmat(:,i),g1_fun,g1_fun_arg,g2_fun,g2_fun_arg,Smat(:,i));
+% end
 
 %% Define initial conditions.
-    function u0 = dfic(x)
+    function u0 = dfic(x,varargin)
         
-        if isempty(varargin) || length(varargin) >= 1 && max(max(max(varargin{1, 1}.u))) == 0
+        if isempty(save_varargin) || length(save_varargin) >= 1 && max(max(max(save_varargin{1, 1}.u))) == 0
             
             i = find(xmesh <= x);
             i = i(end);
@@ -356,7 +399,7 @@ end
                             dev.Nani(i);];
                     end
             end
-        elseif length(varargin) == 1 || length(varargin) >= 1 && max(max(max(varargin{1, 1}.u))) ~= 0
+        elseif length(save_varargin) == 1 || length(save_varargin) >= 1 && max(max(max(save_varargin{1, 1}.u))) ~= 0
             switch par.N_ionic_species
                 case 0
                     u0 = [interp1(icx,icsol(end,:,1),x);
@@ -384,7 +427,7 @@ end
 % in this example I am controlling the flux through the boundaries using
 % the difference in concentration from equilibrium and the extraction
 % coefficient.
-    function [Pl,Ql,Pr,Qr] = dfbc(xl,ul,xr,ur,t)
+    function [Pl,Ql,Pr,Qr] = dfbc(xl,ul,xr,ur,t,varargin)
         
         switch par.V_fun_type
             case 'constant'
