@@ -179,6 +179,12 @@ g2_fun_type_constant = g2_fun_type == "constant";
 
 % C: Time-dependence prefactor term
 switch N_ionic_species
+    case 0
+        C_potential = 0;
+        C_electron = 1;
+        C_hole = 1;
+        Cpre = [C_potential; C_electron; C_hole];
+        N_ionic_species_two = false;
     case 1
         C_potential = 0;
         C_electron = 1;
@@ -194,12 +200,6 @@ switch N_ionic_species
         C_anion = 1;
         Cpre = [C_potential; C_electron; C_hole; C_cation; C_anion];
         N_ionic_species_two = true;
-    otherwise
-        C_potential = 0;
-        C_electron = 1;
-        C_hole = 1;
-        Cpre = [C_potential; C_electron; C_hole];
-        N_ionic_species_two = false;
 end
 
 %% Call solver
